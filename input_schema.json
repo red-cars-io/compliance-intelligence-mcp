@@ -1,0 +1,18 @@
+{
+  "title": "Compliance Intelligence MCP Input",
+  "description": "Input schema for Compliance Intelligence MCP Server — SEC EDGAR company intelligence",
+  "type": "object",
+  "properties": {
+    "tool": {
+      "title": "Tool name",
+      "description": "Name of the MCP tool to call (screen_entity, get_company_filings, get_company_info)",
+      "type": "string"
+    },
+    "params": {
+      "title": "Tool parameters",
+      "description": "Parameters for the selected tool",
+      "type": "object"
+    }
+  },
+  "required": ["tool"]
+}

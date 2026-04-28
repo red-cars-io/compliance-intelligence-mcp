@@ -1,0 +1,25 @@
+{
+  "actorSpecification": 1,
+  "name": "compliance-intelligence-mcp",
+  "title": "Compliance Intelligence MCP",
+  "description": "SEC EDGAR compliance intelligence for AI agents. Screen entities for enforcement actions, access company filings, and retrieve regulatory data for AML, KYC, and sanctions screening workflows.",
+  "version": "1.0",
+  "meta": {
+    "templateId": "standby-node"
+  },
+  "input": "../input_schema.json",
+  "readme": "../README.md",
+  "categories": [
+    "BUSINESS_INTELLIGENCE",
+    "FINANCE"
+  ],
+  "pricing": {
+    "model": "EVENT"
+  },
+  "defaultRunOptions": {
+    "memoryMbytes": 512,
+    "timeoutSecs": 120
+  },
+  "usesStandbyMode": true,
+  "webServerMcpPath": "/mcp"
+}
