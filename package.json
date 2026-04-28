@@ -1,8 +1,8 @@
 {
   "name": "compliance-intelligence-mcp",
   "version": "1.0.0",
-  "type": "module",
   "description": "Compliance Intelligence MCP Server for AI agents — SEC EDGAR enforcement actions, company filings, and sanctions screening for AML and KYC workflows",
+  "type": "module",
   "engines": {
     "node": ">=18.0.0"
   },

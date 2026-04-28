@@ -2,7 +2,7 @@
   "actorSpecification": 1,
   "name": "compliance-intelligence-mcp",
   "title": "Compliance Intelligence MCP",
-  "description": "SEC EDGAR compliance intelligence for AI agents. Screen entities for enforcement actions, access company filings, and retrieve regulatory data for AML, KYC, and sanctions screening workflows.",
+  "description": "SEC EDGAR compliance intelligence for AI agents — enforcement actions, company filings, and sanctions screening for AML and KYC workflows.",
   "version": "1.0",
   "meta": {
     "templateId": "standby-node"

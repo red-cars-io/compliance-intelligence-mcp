@@ -1,18 +1,26 @@
 {
-  "title": "Compliance Intelligence MCP Input",
-  "description": "Input schema for Compliance Intelligence MCP Server — SEC EDGAR company intelligence",
+  "title": "Compliance Intelligence MCP",
   "type": "object",
+  "schemaVersion": 1,
   "properties": {
     "tool": {
-      "title": "Tool name",
-      "description": "Name of the MCP tool to call (screen_entity, get_company_filings, get_company_info)",
-      "type": "string"
+      "title": "Tool Name",
+      "type": "string",
+      "description": "MCP tool to call",
+      "enum": [
+        "screen_entity",
+        "get_company_filings",
+        "get_company_info"
+      ],
+      "editor": "select",
+      "prefill": "screen_entity"
     },
     "params": {
-      "title": "Tool parameters",
-      "description": "Parameters for the selected tool",
-      "type": "object"
+      "title": "Parameters (JSON)",
+      "type": "object",
+      "description": "Tool parameters as JSON object",
+      "editor": "json",
+      "prefill": {"company_name": "Apple Inc.", "cik": "0000320193"}
     }
-  },
-  "required": ["tool"]
+  }
 }

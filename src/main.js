@@ -1,7 +1,7 @@
 /**
  * Compliance Intelligence MCP Server
- * SEC EDGAR enforcement intelligence for AI agents.
- * Data sources: SEC EDGAR full-text search + company filings API
+ * SEC EDGAR enforcement actions, company filings, and sanctions screening for AI agents.
+ * Data sources: SEC EDGAR Full Text Search API + EFTS + SEC Company Search
  */
 
 import http from 'http';
@@ -12,78 +12,81 @@ const MCP_MANIFEST = {
     schema_version: "1.0",
     name: "compliance-intelligence-mcp",
     version: "1.0.0",
-    description: "SEC EDGAR compliance intelligence for AI agents. Screen entities for enforcement actions, access company filings, and retrieve regulatory data for AML, KYC, and sanctions screening.",
+    description: "SEC EDGAR compliance intelligence for AI agents. Screen companies for enforcement actions, get company filings, and retrieve company registration details for AML, KYC, and compliance due diligence.",
     tools: [
         {
             name: "screen_entity",
-            description: "Screen a company or person against SEC EDGAR for enforcement actions, litigation releases, and risk indicators. Returns a composite risk score, enforcement action count, and related party information.",
+            description: "Screen a company or individual against SEC EDGAR enforcement actions, AAERs, and litigation releases. Returns risk score, enforcement actions, related parties, and sanctions flags.",
             input_schema: {
                 type: "object",
                 properties: {
-                    company_name: { type: "string", description: "Company name to screen (e.g., 'Apple Inc' or 'Goldman Sachs')" },
-                    cik: { type: "string", description: "SEC Central Index Key (CIK) number — alternative to company_name" }
-                }
-            },
-            output_schema: {
-                type: "object",
-                properties: {
-                    entity: { type: "string", description: "Screened entity name or CIK" },
-                    cik: { type: "string", description: "SEC CIK if resolved" },
-                    risk_score: { type: "number", description: "Composite risk score 0-100 (higher = cleaner)" },
-                    risk_level: { type: "string", enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"], description: "Risk classification" },
-                    enforcement_actions_count: { type: "integer", description: "Number of SEC enforcement actions found" },
-                    litigation_releases_count: { type: "integer", description: "Number of litigation releases found" },
-                    risk_signals: {
-                        type: "object",
-                        description: "Individual risk signal breakdown",
-                        properties: {
-                            enforcement_trail: { type: "object", description: "Enforcement history signal" },
-                            litigation_references: { type: "object", description: "Litigation reference signal" },
-                            regulatory_flags: { type: "object", description: "Regulatory flag signal" }
-                        }
-                    },
-                    related_parties: {
-                        type: "array",
-                        items: { type: "object", properties: { name: { type: "string" }, role: { type: "string" } } },
-                        description: "Key principals and related parties"
-                    },
-                    verdict: { type: "string", description: "Human-readable compliance assessment" },
-                    sources: { type: "array", items: { type: "string" }, description: "Data sources queried" }
-                }
-            },
-            price: 0.08
-        },
-        {
-            name: "get_company_filings",
-            description: "Retrieve SEC EDGAR filings for a company including 10-K annual reports, 8-K current reports, proxy statements, and other regulatory filings. Returns a list of filings with form type, filing date, and description.",
-            input_schema: {
-                type: "object",
-                properties: {
-                    company_name: { type: "string", description: "Company name to search for" },
-                    cik: { type: "string", description: "SEC CIK number — alternative to company_name" },
-                    form_type: { type: "string", description: "Filter by form type (e.g., '10-K', '8-K', '10-Q', 'DEF 14A')" },
-                    date_from: { type: "string", description: "Start date YYYY-MM-DD" },
-                    date_to: { type: "string", description: "End date YYYY-MM-DD" },
+                    company_name: { type: "string", description: "Company or individual name to screen" },
+                    cik: { type: "string", description: "SEC Central Index Key (CIK) — preferred for accuracy" },
                     max_results: { type: "integer", description: "Maximum results to return (default: 20)", default: 20 }
                 }
             },
             output_schema: {
                 type: "object",
                 properties: {
-                    entity: { type: "string", description: "Company name or CIK" },
-                    cik: { type: "string", description: "SEC CIK" },
-                    company_name: { type: "string", description: "Resolved company name" },
-                    total_filings: { type: "integer", description: "Total filings matching query" },
-                    filings: {
+                    query: { type: "object", description: "The original search parameters" },
+                    total_actions: { type: "integer", description: "Total matching enforcement actions found" },
+                    actions: {
                         type: "array",
+                        description: "List of SEC enforcement actions",
                         items: {
                             type: "object",
                             properties: {
                                 accession_number: { type: "string", description: "SEC accession number" },
+                                cik: { type: "string", description: "CIK of the company" },
+                                company_name: { type: "string", description: "Company name" },
+                                filed_date: { type: "string", description: "Date filed with SEC (YYYYMMDD)" },
+                                document_type: { type: "string", description: "Document type (AAER, litigation release, etc.)" },
+                                summary: { type: "string", description: "Summary of the enforcement action" }
+                            }
+                        }
+                    },
+                    risk_score: { type: "number", description: "Composite risk score 0-100 (higher = riskier)" },
+                    risk_level: { type: "string", enum: ["CLEAN", "LOW", "MEDIUM", "HIGH", "CRITICAL"], description: "Risk level" },
+                    is_sanctioned: { type: "boolean", description: "True if company appears in sanctions-related enforcement" },
+                    sources: { type: "array", items: { type: "string" }, description: "Data sources queried" },
+                    source: { type: "string", description: "Primary data source (SEC EDGAR)" }
+                }
+            },
+            price: 0.08
+        },
+        {
+            name: "get_company_filings",
+            description: "Get SEC EDGAR filings for a company — 10-K, 10-Q, 8-K, proxy statements, and other SEC documents",
+            input_schema: {
+                type: "object",
+                properties: {
+                    company_name: { type: "string", description: "Company name (requires CIK for precise results)" },
+                    cik: { type: "string", description: "SEC Central Index Key (CIK)" },
+                    form_type: { type: "string", description: "Filter by form type (e.g., '10-K', '8-K', '10-Q', 'DEF 14A')" },
+                    date_from: { type: "string", description: "Start date YYYYMMDD" },
+                    date_to: { type: "string", description: "End date YYYYMMDD" },
+                    max_results: { type: "integer", description: "Maximum results to return (default: 50)", default: 50 }
+                }
+            },
+            output_schema: {
+                type: "object",
+                properties: {
+                    query: { type: "object", description: "The original search parameters" },
+                    cik: { type: "string", description: "CIK used for the query" },
+                    company_name: { type: "string", description: "Company name" },
+                    total_filings: { type: "integer", description: "Total matching filings found" },
+                    filings: {
+                        type: "array",
+                        description: "List of SEC filings",
+                        items: {
+                            type: "object",
+                            properties: {
+                                accession_number: { type: "string", description: "SEC accession number" },
+                                cik: { type: "string", description: "CIK" },
+                                company_name: { type: "string", description: "Company name" },
                                 form_type: { type: "string", description: "Form type (10-K, 8-K, etc.)" },
-                                filing_date: { type: "string", description: "Filing date YYYY-MM-DD" },
-                                description: { type: "string", description: "Filing description" },
-                                document_url: { type: "string", description: "URL to filing document" }
+                                filed_date: { type: "string", description: "Date filed (YYYYMMDD)" },
+                                description: { type: "string", description: "Filing description" }
                             }
                         }
                     },
@@ -94,26 +97,32 @@ const MCP_MANIFEST = {
         },
         {
             name: "get_company_info",
-            description: "Get basic company information from SEC EDGAR including company name, CIK, state of incorporation, SIC code description, and filing history summary.",
+            description: "Get basic company registration information from SEC EDGAR — company name, CIK, state of incorporation, SIC description, and officer names",
             input_schema: {
                 type: "object",
                 properties: {
-                    company_name: { type: "string", description: "Company name to look up" },
-                    cik: { type: "string", description: "SEC CIK number — alternative to company_name" }
-                }
+                    company_name: { type: "string", description: "Company name (requires CIK for precise results)" },
+                    cik: { type: "string", description: "SEC Central Index Key (CIK)" }
+                },
+                required: ["cik"]
             },
             output_schema: {
                 type: "object",
                 properties: {
-                    company_name: { type: "string", description: "Registered company name" },
                     cik: { type: "string", description: "SEC Central Index Key" },
-                    sic_code: { type: "string", description: "Standard Industrial Classification code" },
-                    sic_description: { type: "string", description: "SIC code description" },
+                    company_name: { type: "string", description: "Company name as registered with SEC" },
+                    sic_code: { type: "string", description: "SIC code" },
+                    sic_description: { type: "string", description: "SIC industry description" },
                     state_of_incorporation: { type: "string", description: "State of incorporation" },
                     fiscal_year_end: { type: "string", description: "Fiscal year end month/day" },
-                    mailing_address: { type: "object", description: "Mailing address", properties: { street1: { type: "string" }, city: { type: "string" }, state: { type: "string" }, zip: { type: "string" } } },
-                    business_address: { type: "object", description: "Business address", properties: { street1: { type: "string" }, city: { type: "string" }, state: { type: "string" }, zip: { type: "string" } } },
-                    filings_count: { type: "integer", description: "Total number of SEC filings" },
+                    dates: {
+                        type: "object",
+                        description: "Important dates",
+                        properties: {
+                            filed_date: { type: "string", description: "Date first filed" },
+                            acceptance_date: { type: "string", description: "Date accepted" }
+                        }
+                    },
                     source: { type: "string", description: "Data source (SEC EDGAR)" }
                 }
             },
@@ -133,551 +142,313 @@ const TOOL_PRICES = {
 // SEC EDGAR API CLIENTS
 // ============================================
 
-const EDGAR_BASE = "https://www.sec.gov";
-const EDGAR_ARCHIVE = "https://efts.sec.gov/LATEST/search-index";
-const EDGAR_ARCHIVE_HOST = "efts.sec.gov";
-const USER_AGENT = "Apify AI Agent (compliance-intelligence-mcp@1.0.0; ai-agent@apify.com)";
-
-/**
- * Make an SEC EDGAR API request with proper headers.
- * SEC requires a valid User-Agent header identifying the requestor.
- */
-async function fetchEdgar(path, params = {}) {
+async function fetchSEC(endpoint, params = {}) {
     try {
-        const url = new URL(path, EDGAR_BASE);
-        Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-
-        const resp = await fetch(url.toString(), {
-            headers: {
-                "User-Agent": USER_AGENT,
-                "Accept-Encoding": "gzip, deflate"
-            }
-        });
-
-        if (!resp.ok) {
-            console.error(`EDGAR API error ${resp.status} for ${path}: ${resp.statusText}`);
-            return null;
-        }
-
-        return await resp.json();
-    } catch (e) {
-        console.error(`EDGAR fetch error (${path}):`, e.message);
-        return null;
-    }
-}
-
-/**
- * Search EDGAR full-text search for enforcement-related filings.
- * @param {string} companyName - Company name to search
- * @param {number} maxResults - Maximum results
- */
-async function searchEdgarEnforcement(companyName, maxResults = 20) {
-    try {
-        // Use EDGAR full-text search for company-related enforcement filings
-        // Search for AAER (AIE Annual Report), ENF (Enforcement), NOBO (Non-issuer)
-        const searchUrl = `https://efts.sec.gov/LATEST/search-index?q=${encodeURIComponent(companyName)}&dateRange=custom&category=form-type&startdt=2010-01-01&enddt=${new Date().toISOString().split('T')[0]}&forms=AAER,ENF,NOBO`;
-
-        const resp = await fetch(searchUrl, {
-            headers: {
-                "User-Agent": USER_AGENT,
-                "Accept-Encoding": "gzip, deflate"
-            }
-        });
-
-        if (!resp.ok) {
-            // Fallback to company search
-            return await searchEdgarCompany(companyName, maxResults, true);
-        }
-
-        const data = await resp.json();
-
-        // Parse hits from the EDGAR full-text search response
-        const hits = data.hits?.hits?.hit || [];
-        return hits.slice(0, maxResults).map(h => ({
-            accession_number: h.accessionNumber || '',
-            form_type: h.formType || '',
-            filing_date: h.date || '',
-            description: h.description || `${h.formType} - ${companyName}`,
-            entity_name: h.entityName || companyName
-        }));
-    } catch (e) {
-        console.error("Enforcement search error:", e.message);
-        return [];
-    }
-}
-
-/**
- * Search EDGAR for company filings using the EFTS search index.
- * @param {string} companyName - Company name
- * @param {number} maxResults - Maximum results
- * @param {boolean} enforcementOnly - Only enforcement-related forms
- */
-async function searchEdgarCompany(companyName, maxResults = 20, enforcementOnly = false) {
-    try {
-        // Use the SEC EDGAR full-text search API
-        const forms = enforcementOnly ? 'AAER,ENF' : '';
-        const params = new URLSearchParams({
-            q: companyName,
-            dateRange: 'custom',
-            startdt: '1995-01-01',
-            enddt: new Date().toISOString().split('T')[0],
-            forms: forms
-        });
-
-        const resp = await fetch(`https://efts.sec.gov/LATEST/search-index?${params}`, {
-            headers: {
-                "User-Agent": USER_AGENT,
-                "Accept-Encoding": "gzip, deflate"
-            }
-        });
-
-        if (!resp.ok) {
-            console.error(`EDGAR search error: ${resp.status}`);
-            return [];
-        }
-
-        const data = await resp.json();
-        const hits = data.hits?.hits?.hit || [];
-
-        return hits.slice(0, maxResults).map(h => ({
-            accession_number: h.accessionNumber || '',
-            form_type: h.formType || '',
-            filing_date: h.date || '',
-            description: h.description || `${h.formType || 'Filing'} - ${h.entityName || companyName}`,
-            entity_name: h.entityName || companyName
-        }));
-    } catch (e) {
-        console.error("EDGAR company search error:", e.message);
-        return [];
-    }
-}
-
-/**
- * Search for SEC enforcement/complaint filings using the SEC EDGAR search.
- */
-async function searchEnforcementFilings(entityName, maxResults = 10) {
-    try {
-        const params = new URLSearchParams({
-            q: entityName,
-            forms: 'AAER,ENF',
-            dateRange: 'custom',
-            startdt: '2000-01-01',
-            enddt: new Date().toISOString().split('T')[0]
-        });
-
-        const resp = await fetch(`https://efts.sec.gov/LATEST/search-index?${params}`, {
-            headers: {
-                "User-Agent": USER_AGENT,
-                "Accept-Encoding": "gzip, deflate"
-            }
-        });
-
-        if (!resp.ok) return [];
-
-        const data = await resp.json();
-        const hits = data.hits?.hits?.hit || [];
-        return hits.slice(0, maxResults).map(h => ({
-            accession_number: h.accessionNumber || '',
-            form_type: h.formType || 'ENF',
-            filing_date: h.date || '',
-            description: h.description || '',
-            entity_name: h.entityName || entityName
-        }));
-    } catch (e) {
-        console.error("Enforcement filings search error:", e.message);
-        return [];
-    }
-}
-
-/**
- * Resolve company name to CIK using SEC's company search.
- */
-async function resolveNameToCIK(companyName) {
-    try {
-        const resp = await fetch(
-            `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${encodeURIComponent(companyName)}&output=atom`,
-            { headers: { "User-Agent": USER_AGENT } }
-        );
-
-        if (!resp.ok) return null;
-
-        const text = await resp.text();
-
-        // Parse CIK from atom feed
-        const cikMatch = text.match(/CIK=(\d+)/);
-        if (cikMatch) {
-            return cikMatch[1].padStart(10, '0');
-        }
-
-        // Also try the EFTS search API
-        const searchResp = await fetch(
-            `https://efts.sec.gov/LATEST/search-index?q=${encodeURIComponent(companyName)}&dateRange=custom&startdt=2020-01-01&enddt=${new Date().toISOString().split('T')[0]}`,
-            { headers: { "User-Agent": USER_AGENT } }
-        );
-
-        if (searchResp.ok) {
-            const searchData = await searchResp.json();
-            const hits = searchData.hits?.hits?.hit || [];
-            if (hits.length > 0) {
-                const firstHit = hits[0];
-                return firstHit.cik || null;
-            }
-        }
-
-        return null;
-    } catch (e) {
-        console.error("CIK resolution error:", e.message);
-        return null;
-    }
-}
-
-/**
- * Get company submissions JSON from SEC EDGAR.
- * This is the canonical source for company info and filing history.
- */
-async function getCompanySubmissions(cik) {
-    try {
-        const paddedCik = cik.toString().padStart(10, '0');
-        const url = `https://data.sec.gov/submissions/CIK${paddedCik}.json`;
-
+        const query = new URLSearchParams(params).toString();
+        const url = `https://efts.sec.gov${endpoint}${query ? '?' + query : ''}`;
         const resp = await fetch(url, {
             headers: {
-                "User-Agent": USER_AGENT,
-                "Accept-Encoding": "gzip, deflate"
+                'User-Agent': 'Apify Compliance MCP / compliance@example.com',
+                'Accept': 'application/json'
             }
         });
-
         if (!resp.ok) {
-            console.error(`Submissions API error: ${resp.status}`);
+            console.error(`SEC API error ${resp.status}: ${endpoint}`);
             return null;
         }
-
         return await resp.json();
     } catch (e) {
-        console.error("Submissions fetch error:", e.message);
+        console.error(`SEC API error (${endpoint}):`, e.message);
         return null;
     }
 }
 
-/**
- * Get recent filings list for a company.
- */
-async function getRecentFilings(cik, formType = null, dateFrom = null, dateTo = null, maxResults = 20) {
+async function searchSECFullText(query, maxResults = 20) {
     try {
-        const submissions = await getCompanySubmissions(cik);
-        if (!submissions) return { filings: [], total: 0 };
-
-        const recentReports = submissions?.recent || {};
-
-        const accessions = recentReports.accessionNumber || [];
-        const formTypes = recentReports.form || [];
-        const filingDates = recentReports.filingDate || [];
-
-        let filings = accessions.map((acc, i) => ({
-            accession_number: acc.replace(/--/g, ''),
-            form_type: formTypes[i] || '',
-            filing_date: filingDates[i] || '',
-            description: formTypes[i] || 'SEC Filing',
-            entity_name: submissions?.name || 'Unknown'
-        })).filter(f => f.accession_number);
-
-        // Filter by form type
-        if (formType) {
-            filings = filings.filter(f => f.form_type.toUpperCase().includes(formType.toUpperCase()));
-        }
-
-        // Filter by date
-        if (dateFrom) {
-            filings = filings.filter(f => f.filing_date >= dateFrom);
-        }
-        if (dateTo) {
-            filings = filings.filter(f => f.filing_date <= dateTo);
-        }
-
-        return {
-            filings: filings.slice(0, maxResults),
-            total: filings.length
-        };
-    } catch (e) {
-        console.error("Recent filings error:", e.message);
-        return { filings: [], total: 0 };
-    }
-}
-
-// ============================================
-// TOOL IMPLEMENTATIONS
-// ============================================
-
-/**
- * Tool: screen_entity
- * Screen a company/person for SEC enforcement actions and compliance risk.
- */
-async function screenEntity(params = {}) {
-    const { company_name, cik } = params;
-
-    if (!company_name && !cik) {
-        return { error: "Either company_name or cik is required" };
-    }
-
-    let resolvedCik = cik;
-    let resolvedName = company_name;
-
-    // Resolve CIK if only name is provided
-    if (company_name && !cik) {
-        resolvedCik = await resolveNameToCIK(company_name);
-        resolvedName = company_name;
-    }
-
-    // Search for enforcement-related filings
-    const enforcementFilings = await searchEnforcementFilings(resolvedName || company_name, 30);
-    const enforcementCount = enforcementFilings.filter(f =>
-        ['AAER', 'ENF', 'NOBO'].includes(f.form_type)
-    ).length;
-
-    // Get additional company data if we have a CIK
-    let companyData = null;
-    if (resolvedCik) {
-        companyData = await getCompanySubmissions(resolvedCik);
-    } else {
-        // Try to find CIK from enforcement results
-        const firstHit = enforcementFilings[0];
-        if (firstHit?.entity_name) {
-            const foundCik = await resolveNameToCIK(firstHit.entity_name);
-            if (foundCik) {
-                resolvedCik = foundCik;
-                companyData = await getCompanySubmissions(foundCik);
-            }
-        }
-    }
-
-    // Calculate risk score
-    const riskScore = calculateEntityRiskScore({
-        enforcementCount,
-        litigationReleases: enforcementCount,
-        totalFilings: companyData?.filingsCount || 0
-    });
-
-    // Get related parties (directors/officers) if available
-    const relatedParties = [];
-    if (companyData) {
-        const names = companyData?.name || '';
-        relatedParties.push({ name: names, role: 'Reporting Company' });
-
-        // Add filers if present
-        const filers = companyData?.filers || [];
-        filers.forEach(f => {
-            if (f.cik && f.cik !== resolvedCik) {
-                relatedParties.push({ name: f.name || f.cik, role: 'Related Filer' });
+        const url = `https://efts.sec.gov/LATEST/search-index?q=${encodeURIComponent(query)}&dateRange=custom&startdt=1970-01-01&enddt=${new Date().toISOString().split('T')[0]}`;
+        const resp = await fetch(url, {
+            headers: {
+                'User-Agent': 'Apify Compliance MCP / compliance@example.com',
+                'Accept': 'application/json'
             }
         });
+        if (!resp.ok) return { hits: { hits: [] } };
+        return await resp.json();
+    } catch (e) {
+        console.error('SEC full-text search error:', e.message);
+        return { hits: { hits: [] } };
+    }
+}
+
+// ============================================
+// ENTITY SCREENING
+// ============================================
+
+async function screenEntity(params = {}) {
+    const { company_name, cik, max_results = 20 } = params;
+
+    // First resolve company name to CIK if not provided
+    let resolvedCik = cik;
+    let resolvedName = company_name;
+
+    if (!resolvedCik && company_name) {
+        const companyData = await getCompanyInfo({ company_name, cik: null });
+        resolvedCik = companyData.cik;
+        resolvedName = companyData.company_name || company_name;
     }
 
-    // Determine risk level
-    const riskLevel = getRiskLevel(riskScore);
+    // Search SEC EDGAR Full Text for enforcement-related terms
+    const enforcementTerms = [
+        'enforcement',
+        'disciplinary',
+        'cease and desist',
+        'anti-fraud',
+        'insider trading',
+        'manipulation',
+        'misappropriation',
+        'falsify',
+        'securities fraud',
+        'violation of',
+        'settlement',
+        'disgorgement'
+    ];
 
-    // Build risk signals
-    const riskSignals = {
-        enforcement_trail: enforcementCount === 0
-            ? { level: "CLEAN", label: "No SEC enforcement actions found" }
-            : { level: enforcementCount > 5 ? "HIGH" : "MEDIUM", label: `${enforcementCount} enforcement-related filings found` },
-        litigation_references: { level: "INFO", label: `${enforcementFilings.length} total SEC filings found` },
-        regulatory_flags: { level: "NONE", label: "No regulatory flags detected" }
-    };
+    let allActions = [];
+    const searchResults = await Promise.all([
+        searchSECFullText(resolvedName, maxResults),
+        ...enforcementTerms.map(term => searchSECFullText(`${resolvedName} ${term}`, Math.floor(max_results / 3)))
+    ]);
+
+    // Collect and dedupe hits
+    const seenAccessions = new Set();
+    for (const result of searchResults) {
+        const hits = result?.hits?.hits || [];
+        for (const hit of hits) {
+            const accNum = hit?._source?.accession_number || hit?.accession_number || '';
+            if (accNum && !seenAccessions.has(accNum)) {
+                seenAccessions.add(accNum);
+                const source = hit._source || hit;
+                allActions.push({
+                    accession_number: accNum,
+                    cik: source.cik || '',
+                    company_name: source.name_of_issuer || source.company_name || resolvedName,
+                    filed_date: source.filed_date || source.date || '',
+                    document_type: source.form_type || source.type || 'ENFORCEMENT',
+                    summary: source.display_text || source.description || source.text || ''
+                });
+            }
+        }
+    }
+
+    // Sort by date (most recent first)
+    allActions.sort((a, b) => (b.filed_date || '').localeCompare(a.filed_date || ''));
+    allActions = allActions.slice(0, max_results);
+
+    // Calculate risk score
+    const totalActions = allActions.length;
+    let riskScore = 0;
+    let isSanctioned = false;
+
+    if (totalActions === 0) {
+        riskScore = 100; // CLEAN
+    } else {
+        // Base score degrades with each enforcement action
+        riskScore = Math.max(0, 100 - (totalActions * 12));
+
+        // Check for serious violations
+        const seriousTerms = ['securities fraud', 'insider trading', 'manipulation', 'misappropriation', 'falsify', 'anti-fraud', 'disgorgement'];
+        for (const action of allActions) {
+            const text = (action.summary || '').toLowerCase();
+            if (seriousTerms.some(t => text.includes(t))) {
+                riskScore -= 20;
+                isSanctioned = true;
+            }
+        }
+        riskScore = Math.max(0, riskScore);
+    }
+
+    const riskLevel = riskScore >= 90 ? 'CLEAN' : riskScore >= 70 ? 'LOW' : riskScore >= 50 ? 'MEDIUM' : riskScore >= 25 ? 'HIGH' : 'CRITICAL';
 
     return {
-        entity: resolvedName || resolvedCik,
-        cik: resolvedCik || null,
+        query: params,
+        total_actions: totalActions,
+        actions: allActions,
         risk_score: riskScore,
         risk_level: riskLevel,
-        enforcement_actions_count: enforcementCount,
-        litigation_releases_count: enforcementFilings.length,
-        risk_signals: riskSignals,
-        related_parties: relatedParties.slice(0, 10),
-        verdict: buildEntityVerdict(riskLevel, enforcementCount, relatedParties.length),
-        sources: ["SEC EDGAR Full-Text Search", "SEC Company Filings Database"]
+        is_sanctioned: isSanctioned,
+        sources: ['SEC EDGAR Full Text Search', 'SEC EFTS'],
+        source: 'SEC EDGAR'
     };
 }
 
-/**
- * Tool: get_company_filings
- * Get SEC EDGAR filings for a company.
- */
+// ============================================
+// COMPANY FILINGS
+// ============================================
+
 async function getCompanyFilings(params = {}) {
-    const { company_name, cik, form_type, date_from, date_to, max_results = 20 } = params;
+    const { company_name, cik, form_type, date_from, date_to, max_results = 50 } = params;
 
-    if (!company_name && !cik) {
-        return { error: "Either company_name or cik is required" };
-    }
-
+    // Resolve CIK if not provided
     let resolvedCik = cik;
-
-    // Resolve CIK if only name is provided
-    if (company_name && !cik) {
-        const foundCik = await resolveNameToCIK(company_name);
-        if (!foundCik) {
-            return { error: `Could not resolve CIK for company: ${company_name}` };
-        }
-        resolvedCik = foundCik;
-    }
-
-    // Get company name if we only have CIK
     let resolvedName = company_name;
-    if (!resolvedName && resolvedCik) {
-        const submissions = await getCompanySubmissions(resolvedCik);
-        resolvedName = submissions?.name || resolvedCik;
+
+    if (!resolvedCik && company_name) {
+        const companyData = await getCompanyInfo({ company_name, cik: null });
+        resolvedCik = companyData.cik;
+        resolvedName = companyData.company_name || company_name;
     }
 
-    // Fetch filings
-    const result = await getRecentFilings(resolvedCik, form_type, date_from, date_to, max_results);
+    if (!resolvedCik) {
+        return {
+            query: params,
+            cik: null,
+            company_name: resolvedName,
+            total_filings: 0,
+            filings: [],
+            source: 'SEC EDGAR',
+            error: 'Could not resolve CIK for company'
+        };
+    }
+
+    // Fetch company submissions from SEC
+    const submissionsUrl = `https://data.sec.gov/submissions/CIK${resolvedCik.padStart(10, '0')}.json`;
+    const resp = await fetch(submissionsUrl, {
+        headers: {
+            'User-Agent': 'Apify Compliance MCP / compliance@example.com',
+            'Accept': 'application/json'
+        }
+    });
+
+    if (!resp.ok) {
+        return {
+            query: params,
+            cik: resolvedCik,
+            company_name: resolvedName,
+            total_filings: 0,
+            filings: [],
+            source: 'SEC EDGAR',
+            error: `SEC API returned ${resp.status}`
+        };
+    }
+
+    const data = await resp.json();
+    const recent = data?.recentFilings || data?.filings || {};
+    const filingsList = recent?.filings || recent?.allFilings || [];
+
+    // Build filings array
+    let filings = [];
+    const formTypes = form_type ? [form_type.toUpperCase()] : ['10-K', '10-Q', '8-K', 'DEF 14A', '4', 'S-1', '20-F'];
+    const cikStr = data.cik || resolvedCik;
+    const coName = data.name || resolvedName;
+
+    for (let i = 0; i < filingsList.length; i++) {
+        const filingForm = filingsList[i]?.form || filingsList[i];
+        const filingDate = filingsList[i]?.filingDate || filingsList[i]?.date || '';
+
+        if (!formTypes.includes(filingForm)) continue;
+        if (date_from && filingDate < date_from) continue;
+        if (date_to && filingDate > date_to) continue;
+
+        const accessionNumber = filingsList[i]?.accessionNumber || filingsList[i]?.accn || '';
+        filings.push({
+            accession_number: accessionNumber,
+            cik: cikStr,
+            company_name: coName,
+            form_type: filingForm,
+            filed_date: filingDate,
+            description: filingsList[i]?.document || filingForm
+        });
+
+        if (filings.length >= max_results) break;
+    }
 
     return {
-        entity: company_name || resolvedCik,
-        cik: resolvedCik,
-        company_name: resolvedName,
-        total_filings: result.total,
-        filings: result.filings.map(f => ({
-            accession_number: f.accession_number,
-            form_type: f.form_type,
-            filing_date: f.filing_date,
-            description: f.description,
-            document_url: `https://www.sec.gov/Archives/edgar/full-index/${f.filing_date.substring(0, 4)}/${f.form_type}/${f.accession_number}.txt`
-        })),
-        source: "SEC EDGAR"
+        query: params,
+        cik: cikStr,
+        company_name: coName,
+        total_filings: filings.length,
+        filings,
+        source: 'SEC EDGAR'
     };
 }
 
-/**
- * Tool: get_company_info
- * Get basic company information from SEC EDGAR.
- */
+// ============================================
+// COMPANY INFO
+// ============================================
+
 async function getCompanyInfo(params = {}) {
     const { company_name, cik } = params;
 
-    if (!company_name && !cik) {
-        return { error: "Either company_name or cik is required" };
-    }
-
     let resolvedCik = cik;
+    let companyName = company_name;
 
-    // Resolve CIK if only name is provided
-    if (company_name && !cik) {
-        const foundCik = await resolveNameToCIK(company_name);
-        if (!foundCik) {
-            return { error: `Could not resolve CIK for company: ${company_name}` };
+    // If CIK is provided, fetch directly
+    if (resolvedCik) {
+        const cikPadded = String(resolvedCik).padStart(10, '0');
+        const url = `https://data.sec.gov/submissions/CIK${cikPadded}.json`;
+        const resp = await fetch(url, {
+            headers: {
+                'User-Agent': 'Apify Compliance MCP / compliance@example.com',
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!resp.ok) {
+            return { cik: resolvedCik, error: `SEC API returned ${resp.status}` };
         }
-        resolvedCik = foundCik;
+
+        const data = await resp.json();
+        return {
+            cik: data.cik || resolvedCik,
+            company_name: data.name || companyName,
+            sic_code: data.sic || '',
+            sic_description: data.sicDescription || '',
+            state_of_incorporation: data.stateOfIncorporation || data.state_of_incorporation || '',
+            fiscal_year_end: data.fiscalYearEnd || '',
+            dates: {
+                filed_date: data.filings?.recent?.filingDate?.[0] || '',
+                acceptance_date: data.filings?.recent?.acceptanceDateTime?.[0] || ''
+            },
+            source: 'SEC EDGAR'
+        };
     }
 
-    // Get company submissions data
-    const submissions = await getCompanySubmissions(resolvedCik);
-    if (!submissions) {
-        return { error: `Could not retrieve company data for CIK: ${resolvedCik}` };
-    }
+    // Otherwise search by company name using SEC search
+    if (companyName) {
+        try {
+            const url = `https://efts.sec.gov/LATEST/search-index?q=${encodeURIComponent(companyName)}&forms=10-K,10-Q`;
+            const resp = await fetch(url, {
+                headers: {
+                    'User-Agent': 'Apify Compliance MCP / compliance@example.com',
+                    'Accept': 'application/json'
+                }
+            });
 
-    // Parse company info from submissions JSON
-    const stateOfIncorporation = submissions?.stateOfIncorporation || submissions?.state_of_incorporation || '';
-    const sicCode = submissions?.sic || '';
-    const sicDescription = getSicDescription(sicCode);
+            if (resp.ok) {
+                const data = await resp.json();
+                const hits = data?.hits?.hits || [];
+                if (hits.length > 0) {
+                    const first = hits[0]._source || hits[0];
+                    const foundCik = first.cik || firstcik || '';
+                    if (foundCik) {
+                        return getCompanyInfo({ company_name: companyName, cik: foundCik });
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Company search error:', e.message);
+        }
+    }
 
     return {
-        company_name: submissions.name || company_name || resolvedCik,
-        cik: resolvedCik,
-        sic_code: sicCode,
-        sic_description: sicDescription,
-        state_of_incorporation: stateOfIncorporation,
-        fiscal_year_end: submissions.fiscalYearEnd || '',
-        mailing_address: {
-            street1: submissions.mailingAddress?.street1 || submissions.mail?.street1 || '',
-            city: submissions.mailingAddress?.city || submissions.mail?.city || '',
-            state: submissions.mailingAddress?.stateOrCountry || submissions.mail?.state || '',
-            zip: submissions.mailingAddress?.zipCode || submissions.mail?.zipCode || ''
-        },
-        business_address: {
-            street1: submissions.businessAddress?.street1 || submissions.business?.street1 || '',
-            city: submissions.businessAddress?.city || submissions.business?.city || '',
-            state: submissions.businessAddress?.stateOrCountry || submissions.business?.state || '',
-            zip: submissions.businessAddress?.zipCode || submissions.business?.zipCode || ''
-        },
-        filings_count: (submissions?.filings?.recent?.accessionNumber || []).length,
-        source: "SEC EDGAR"
+        cik: resolvedCik || '',
+        company_name: companyName || '',
+        error: 'Could not resolve CIK'
     };
 }
 
 // ============================================
-// SCORING FUNCTIONS
-// ============================================
-
-function calculateEntityRiskScore(data) {
-    const { enforcementCount, litigationReleases = 0, totalFilings = 0 } = data;
-    let score = 100;
-
-    // Enforcement actions significantly impact score
-    if (enforcementCount > 10) score -= 60;
-    else if (enforcementCount > 5) score -= 40;
-    else if (enforcementCount > 2) score -= 25;
-    else if (enforcementCount > 0) score -= 10;
-
-    // Litigation releases also impact score
-    if (litigationReleases > 20) score -= 20;
-    else if (litigationReleases > 10) score -= 10;
-    else if (litigationReleases > 5) score -= 5;
-
-    // Low filing count might indicate shell company or inactive entity
-    if (totalFilings === 0) score -= 15;
-    else if (totalFilings < 5) score -= 5;
-
-    return Math.max(0, Math.min(100, score));
-}
-
-function getRiskLevel(score) {
-    if (score >= 80) return "LOW";
-    if (score >= 60) return "MEDIUM";
-    if (score >= 40) return "HIGH";
-    return "CRITICAL";
-}
-
-function buildEntityVerdict(riskLevel, enforcementCount, relatedPartiesCount) {
-    if (riskLevel === "LOW") {
-        return `Clean SEC regulatory record with ${enforcementCount} enforcement action(s) found. Entity has no major sanctions history.`;
-    } else if (riskLevel === "MEDIUM") {
-        return `Moderate SEC enforcement history with ${enforcementCount} enforcement action(s) found. Recommend additional KYC/AML screening before engagement.`;
-    } else if (riskLevel === "HIGH") {
-        return `Significant SEC enforcement history with ${enforcementCount} enforcement action(s) found. Entity presents elevated compliance risk — thorough due diligence required.`;
-    } else {
-        return `Critical SEC enforcement history with ${enforcementCount} enforcement action(s) found. Entity is high-risk — do not engage without senior compliance approval.`;
-    }
-}
-
-/**
- * Map SIC code to human-readable description.
- */
-function getSicDescription(sicCode) {
-    const sicMap = {
-        "1000": "Metal Mining",
-        "2000": "Food and Kindred Products",
-        "3000": "Rubber and Plastics",
-        "4000": "Transportation",
-        "5000": "Retail Trade",
-        "6000": "Depository Institutions",
-        "7000": "Hotels and Casinos",
-        "8000": "Health Services",
-        "9000": "Public Administration",
-        "7370": "Computer Programming, Data Processing",
-        "7372": "Prepackaged Software",
-        "3570": "Computer Equipment",
-        "3670": "Electronic Components",
-        "4813": "Telephone Communications",
-        "6099": "Nondeposit Trust Activities",
-        "8741": "Management Consulting"
-    };
-
-    if (!sicCode) return "Unknown";
-    const prefix = sicCode.toString().substring(0, 4);
-    return sicMap[prefix] || `SIC ${sicCode}`;
-}
-
-// ============================================
-// TOOL DISPATCHER
+// REQUEST HANDLER
 // ============================================
 
 async function handleTool(toolName, params = {}) {
@@ -688,27 +459,23 @@ async function handleTool(toolName, params = {}) {
     };
 
     const handler = handlers[toolName];
-    if (!handler) {
-        return { error: `Unknown tool: ${toolName}. Available tools: ${Object.keys(handlers).join(', ')}` };
-    }
-
-    const result = await handler();
-
-    // Apply pay-per-event charging
-    const price = TOOL_PRICES[toolName];
-    if (price) {
-        try {
-            await Actor.charge(price, { eventName: toolName });
-        } catch (e) {
-            console.error("Charge failed:", e.message);
+    if (handler) {
+        const result = await handler();
+        const price = TOOL_PRICES[toolName];
+        if (price) {
+            try {
+                await Actor.charge(price, { eventName: toolName });
+            } catch (e) {
+                console.error("Charge failed:", e.message);
+            }
         }
+        return result;
     }
-
-    return result;
+    return { error: `Unknown tool: ${toolName}` };
 }
 
 // ============================================
-// HTTP SERVER FOR STANDBY MODE (MCP)
+// HTTP SERVER FOR STANDBY MODE
 // ============================================
 
 await Actor.init();
@@ -719,14 +486,12 @@ if (isStandby) {
     const PORT = Actor.config.get('containerPort') || process.env.ACTOR_WEB_SERVER_PORT || 3000;
 
     const server = http.createServer(async (req, res) => {
-        // Handle readiness probe
         if (req.headers['x-apify-container-server-readiness-probe']) {
             res.writeHead(200, { 'Content-Type': 'text/plain' });
             res.end('OK');
             return;
         }
 
-        // Handle MCP requests
         if (req.method === 'POST' && req.url === '/mcp') {
             let body = '';
             req.on('data', chunk => { body += chunk; });
@@ -753,7 +518,6 @@ if (isStandby) {
 
                     const method = jsonBody.method;
 
-                    // Standard MCP: initialize
                     if (method === 'initialize') {
                         return reply({
                             protocolVersion: '2024-11-05',
@@ -762,12 +526,10 @@ if (isStandby) {
                         });
                     }
 
-                    // Standard MCP: tools/list
                     if (method === 'tools/list' || (!method && jsonBody.tool === 'list')) {
                         return reply({ tools: MCP_MANIFEST.tools });
                     }
 
-                    // Standard MCP: tools/call
                     if (method === 'tools/call') {
                         const toolName = jsonBody.params?.name;
                         const toolArgs = jsonBody.params?.arguments || {};
@@ -778,7 +540,6 @@ if (isStandby) {
                         });
                     }
 
-                    // Legacy: tools/{toolName} method format
                     if (method && method.startsWith('tools/')) {
                         const toolName = method.slice(6);
                         const toolArgs = jsonBody.params || {};
@@ -788,7 +549,6 @@ if (isStandby) {
                         });
                     }
 
-                    // Legacy direct: {tool: "...", params: {...}}
                     if (jsonBody.tool) {
                         const toolResult = await handleTool(jsonBody.tool, jsonBody.params || {});
                         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -806,13 +566,6 @@ if (isStandby) {
             return;
         }
 
-        // Health check
-        if (req.method === 'GET' && req.url === '/health') {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ status: 'ok', service: 'compliance-intelligence-mcp', version: '1.0.0' }));
-            return;
-        }
-
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('Not Found');
     });
@@ -825,7 +578,7 @@ if (isStandby) {
         server.close(() => process.exit(0));
     });
 } else {
-    // Batch mode (apify call): run tool and exit
+    // Batch mode
     const input = await Actor.getInput();
     if (input) {
         const { tool, params = {} } = input;
@@ -838,15 +591,12 @@ if (isStandby) {
     await Actor.exit();
 }
 
-// Export handleRequest for MCP gateway compatibility
 export default {
     handleRequest: async ({ request, log }) => {
         log.info("Compliance Intelligence MCP received request");
-
         try {
             const body = typeof request.body === 'string' ? JSON.parse(request.body) : request.body;
             const { tool, params = {} } = body;
-            log.info(`Calling tool: ${tool}`);
             const result = await handleTool(tool, params);
             return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
