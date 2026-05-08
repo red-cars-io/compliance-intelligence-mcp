@@ -1,25 +1,32 @@
 {
-  "actorSpecification": 1,
-  "name": "compliance-intelligence-mcp",
-  "title": "Compliance Intelligence MCP",
-  "description": "SEC EDGAR compliance intelligence for AI agents — enforcement actions, company filings, and sanctions screening for AML and KYC workflows.",
-  "version": "1.0",
-  "meta": {
-    "templateId": "standby-node"
-  },
-  "input": "../input_schema.json",
-  "readme": "../README.md",
-  "categories": [
-    "BUSINESS_INTELLIGENCE",
-    "FINANCE"
-  ],
-  "pricing": {
-    "model": "EVENT"
-  },
-  "defaultRunOptions": {
-    "memoryMbytes": 512,
-    "timeoutSecs": 120
-  },
-  "usesStandbyMode": true,
-  "webServerMcpPath": "/mcp"
+    "$schema": "https://apify.com/schemas/v1/actor.ide.json",
+    "actorSpecification": 1,
+    "name": "compliance-intelligence-mcp",
+    "title": "Compliance Intelligence MCP",
+    "version": "1.0",
+    "description": "SEC EDGAR compliance intelligence for AI agents — enforcement actions, company filings, and sanctions screening for AML and KYC workflows.",
+    "buildTag": "latest",
+    "usesStandbyMode": true,
+    "meta": {
+        "templateId": "ts-standby",
+        "generatedBy": "apify-cli"
+    },
+    "dockerfile": "../Dockerfile",
+    "webServerMcpPath": "/mcp",
+    "defaultRunOptions": {
+        "build": "latest",
+        "memoryMbytes": 1024,
+        "timeoutSecs": 3600
+    },
+    "input": {
+        "title": "Input schema",
+        "type": "object",
+        "schemaVersion": 1,
+        "properties": {},
+        "required": []
+    },
+    "pricing": {
+        "model": "PAY_PER_EVENT"
+    },
+    "categories": ["MCP_SERVERS", "AI"]
 }
